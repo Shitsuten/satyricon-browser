@@ -242,6 +242,59 @@ func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt:
 
 ---
 
+## 15. 多 Tab 支持
+
+**BrowserTabManager：** `ObservableObject` 单例，持久化在 app 生命周期内（不跟 SwiftUI view 绑定）。
+
+```swift
+struct BrowserTab: Identifiable {
+    let id = UUID()
+    var url: URL
+    var title: String?
+    var isLoading, canGoBack, canGoForward: Bool
+}
+
+class BrowserTabManager: ObservableObject {
+    static let shared = BrowserTabManager()
+    @Published var tabs: [BrowserTab] = []
+    @Published var activeTabId: UUID?
+    private var webViews: [UUID: WKWebView] = [:]
+    // webView(for:) 懒创建——首次访问某 tab 时才分配 WKWebView
+    // navigate(to:) 更新当前 tab 的 URL 并 load
+    // closeTab(_:) 关闭 tab 并释放 WKWebView；最后一个 tab 关不掉，自动变 about:blank
+    // switchTo(_:) 切换活跃 tab
+}
+```
+
+**Tab Strip UI：** 在 URL 栏下方，横向 ScrollView，每个 tab 一个胶囊（标题/域名 + × 关闭），右端 + 新建按钮。活跃 tab 有底色+描边。
+
+**WKWebView 复用：** `BrowserWebViewWrapper`（UIViewRepresentable）不创建 WKWebView——从 tab manager 取已有的实例放进 container UIView，切 tab 时移动 WKWebView 的 superview 而不是重建。
+
+**返回不丢状态：** 因为 tab manager 是全局单例，push/pop BrowserView 不影响 WKWebView 实例和页面内容。
+
+---
+
+## 16. Cookie 智能注释
+
+每条 cookie 下方显示一行自动生成的注释，包括：
+
+**用途猜测**（按 cookie name 关键词匹配）：
+- 🔑 login — 含 `sess`/`sid`/`auth`/`token`/`login`
+- 🛡 csrf — 含 `csrf`/`xsrf`
+- 📋 consent — 含 `consent`/`gdpr`/`cookie_policy`
+- 📊 analytics — 含 `_ga`/`_gid`/`analytics`/`_fbp`
+- 📢 ads — 含 `ad` + `id`/`track`
+- 🌐 language — 含 `lang`/`locale`/`i18n`
+- 🎨 preference — 含 `theme`/`dark`/`mode`
+
+**属性标注：** `secure` · `httpOnly` · `session` 或 `expires in Nd/Ny` · `expired`
+
+**域名合并：** `.google.com` 和 `google.com` 归到同一组（剥离前导 `.`）。
+
+**删除确认：** 单条和按域名删除都有二次确认弹窗。
+
+---
+
 ## 关键实现注意事项
 
 - 所有下拉浮层（脚本、设置）用 overlay + 透明背景点击关闭层，对齐 `.topTrailing`
@@ -251,3 +304,4 @@ func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt:
 - 移动模式 UA：`Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1`
 - 指纹伪装值对应一台通用 iPhone 15（393×852 @3x，6 核，4GB 内存）
 - 反指纹 JS 只注入浏览器的 BrowserWebView。如果你的 app 里有其他 WKWebView 用于加载自己的可信页面，不需要注入
+- Tab manager 是全局单例——不要在 view 的 `@State` 里持有 tab 数据，否则 pop 时丢失
