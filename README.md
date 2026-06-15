@@ -114,10 +114,41 @@ func downloadDidFinish(_:) { // 震动反馈 }
 
 ## 7. WKUIDelegate（JS 弹窗）
 
-三个都用 `UIAlertController`，present 在 `webView.window?.rootViewController` 上：
-- `runJavaScriptAlertPanelWithMessage` → OK 按钮
-- `runJavaScriptConfirmPanelWithMessage` → Cancel (false) / OK (true)
-- `runJavaScriptTextInputPanelWithPrompt` → 输入框 + Cancel (nil) / OK (输入文字)
+Coordinator 需要额外遵循 `WKUIDelegate`，并在创建 WKWebView 时设置 `wv.uiDelegate = context.coordinator`。
+
+三个方法都用 `UIAlertController`，present 在 `webView.window?.rootViewController` 上：
+
+```swift
+// alert()
+func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo) async {
+    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        let ac = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        ac.addAction(UIAlertAction(title: "OK", style: .default) { _ in cont.resume() })
+        webView.window?.rootViewController?.present(ac, animated: true)
+    }
+}
+
+// confirm()
+func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo) async -> Bool {
+    await withCheckedContinuation { cont in
+        let ac = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        ac.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in cont.resume(returning: false) })
+        ac.addAction(UIAlertAction(title: "OK", style: .default) { _ in cont.resume(returning: true) })
+        webView.window?.rootViewController?.present(ac, animated: true)
+    }
+}
+
+// prompt()
+func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo) async -> String? {
+    await withCheckedContinuation { cont in
+        let ac = UIAlertController(title: nil, message: prompt, preferredStyle: .alert)
+        ac.addTextField { $0.text = defaultText }
+        ac.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in cont.resume(returning: nil) })
+        ac.addAction(UIAlertAction(title: "OK", style: .default) { _ in cont.resume(returning: ac.textFields?.first?.text) })
+        webView.window?.rootViewController?.present(ac, animated: true)
+    }
+}
+```
 
 ---
 
