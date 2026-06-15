@@ -1,6 +1,6 @@
 # App 内置浏览器实现方案
 
-在一个已有的 iOS 17+ SwiftUI app 里，用 WKWebView 构建一个功能完整的隐私加固浏览器。浏览器在 "Playground" 板块内，与一组网页作品列表并列。app 使用自定义 tab bar（不是系统 TabView），通过 `.safeAreaInset(edge: .bottom)` 实现。
+在一个 iOS 17+ SwiftUI app 里，用 WKWebView 构建一个功能完整的隐私加固浏览器。可以作为 app 内的独立模块嵌入任何页面。以下示例假设浏览器嵌在一个列表页面内，app 使用自定义 tab bar（不是系统 TabView），通过 `.safeAreaInset(edge: .bottom)` 实现。如果你用系统 TabView，§5 的底部留白部分可以跳过。
 
 ---
 
@@ -27,7 +27,7 @@ function haptic(style = 'medium') {
 
 ## 2. 浏览器入口
 
-在 Playground 列表顶部加一行 **Browser**（地球图标 + "Browser" 标题 + "open any url" 副标题）。点击 push 一个 `BrowserView` 进 NavigationStack（不用 fullScreenCover），这样 app 底部 tab bar 保持可见。
+在需要放置浏览器入口的页面加一行 **Browser**（地球图标 + "Browser" 标题 + "open any url" 副标题）。点击 push 一个 `BrowserView` 进 NavigationStack（不用 fullScreenCover），这样 app 底部 tab bar 保持可见。
 
 ---
 
@@ -250,4 +250,4 @@ func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt:
 - 桌面模式 UA：`Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15`
 - 移动模式 UA：`Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1`
 - 指纹伪装值对应一台通用 iPhone 15（393×852 @3x，6 核，4GB 内存）
-- 反指纹 JS 只注入 BrowserWebView，不注入 playground piece 的 WebView（那些是你自己的页面）
+- 反指纹 JS 只注入浏览器的 BrowserWebView。如果你的 app 里有其他 WKWebView 用于加载自己的可信页面，不需要注入
