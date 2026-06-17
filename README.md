@@ -295,6 +295,55 @@ class BrowserTabManager: ObservableObject {
 
 ---
 
+## 17. 网页截图
+
+脚本面板（`</>`）里 View Source 下方加 📷 **Screenshot** 按钮。
+
+**流程：**
+1. 点击 → `WKWebView.takeSnapshot(with: nil)` 截取当前可视区域
+2. 弹出预览 sheet，显示截图 + 三个操作：
+   - **Save to Photos** — `UIImageWriteToSavedPhotosAlbum`
+   - **Share** — SwiftUI `ShareLink`
+   - **Copy** — 复制到剪贴板 `UIPasteboard.general.image`
+3. **Upload 区域** — 输入框预填目标 URL，点 Upload 直接 POST raw JPEG：
+   ```swift
+   var request = URLRequest(url: url)
+   request.httpMethod = "POST"
+   request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+   request.httpBody = image.jpegData(compressionQuality: 0.85)
+   ```
+   显示上传结果（✓ uploaded / failed）。
+
+**截图预览 sheet（ScreenshotPreviewView）：** 独立 View struct，接收 `UIImage`，包含保存/分享/复制/上传四个功能。上传 URL 可自定义，默认可预填你的后端 endpoint。
+
+---
+
+## 18. 流式性能隔离
+
+API 聊天的流式输出（30fps token 更新）会导致整个消息列表卡顿——即使用户滚到上面看旧消息。
+
+**原因：** `streamingText` 是 `@Observable` 属性，每 33ms 变化一次。如果流式消息渲染是父 view body 的一部分（`@ViewBuilder` 方法），SwiftUI 认为整个 body 脏了，ForEach 里几百条消息全部重新 diff。
+
+**修法：** 把流式消息提取为独立的 `View` struct（`StreamingMessageView`），它自己直接观察 `vm.streamingText`。父 view 的 ForEach 只看 `vm.streaming`（Bool，只在开始/结束时变化），不在流式期间被 30fps 更新打扰。
+
+```swift
+// 父 view 里：
+if vm.streaming {
+    StreamingMessageView(vm: vm, c: c)  // 独立 struct，自己观察 streamingText
+}
+
+// StreamingMessageView 是 private struct，不是 @ViewBuilder 方法
+private struct StreamingMessageView: View {
+    let vm: APIChatViewModel
+    let c: ThemeColors
+    var body: some View {
+        // 这里读 vm.streamingText —— 只有这个 view 被标脏
+    }
+}
+```
+
+---
+
 ## 关键实现注意事项
 
 - 所有下拉浮层（脚本、设置）用 overlay + 透明背景点击关闭层，对齐 `.topTrailing`
@@ -305,3 +354,6 @@ class BrowserTabManager: ObservableObject {
 - 指纹伪装值对应一台通用 iPhone 15（393×852 @3x，6 核，4GB 内存）
 - 反指纹 JS 只注入浏览器的 BrowserWebView。如果你的 app 里有其他 WKWebView 用于加载自己的可信页面，不需要注入
 - Tab manager 是全局单例——不要在 view 的 `@State` 里持有 tab 数据，否则 pop 时丢失
+- 流式消息必须是独立 View struct，不能是父 view 的 `@ViewBuilder` 方法，否则 30fps 更新会拖垮整个消息列表
+- 所有破坏性操作（清除历史/清除cookie/清除全部数据/删除脚本）都需要二次确认弹窗
+- 截图的 Upload 默认 URL 可以预填你的后端 endpoint，方便一键上传
