@@ -161,7 +161,10 @@ func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt:
 
 **注入的 JS（WKUserScript，在 .atDocumentStart，forMainFrameOnly: false）：**
 ```js
-// WebRTC — 替换 RTCPeerConnection 构造函数，调用即抛异常
+// WebRTC — defineProperty 冻结 RTCPeerConnection/webkitRTC/mozRTC 为 undefined
+//          writable:false + configurable:false，页面无法重新定义绕过
+// mediaDevices — getUserMedia 返回 NotAllowedError，enumerateDevices 返回空数组
+//               navigator.mediaDevices 本身也冻结，防止检测脚本通过设备 API 推断指纹
 // Canvas — hook toDataURL，读取前给像素数据加 1-bit 确定性噪声
 // WebGL — hook getParameter，查询 UNMASKED_VENDOR/RENDERER 时返回 "Generic GPU"
 // 硬件 — 伪装 hardwareConcurrency(6)、deviceMemory(4)、platform("iPhone")、vendor("Apple Computer, Inc.")
@@ -328,15 +331,20 @@ class BrowserTabManager: ObservableObject {
 - 默认预填：`google.com`, `youtube.com`, `twitter.com`, `x.com`, `github.com`, `reddit.com`, `discord.com`, `telegram.org`
 - `shouldBlock(host:)` — nonisolated 方法，safe mode 开启时检查域名是否在 blocklist 中（含子域名匹配）
 
-**拦截点（三处覆盖所有场景）：**
+**拦截点（四层覆盖所有场景）：**
 
-1. **WKNavigationDelegate `decidePolicyFor`** — 浏览器内导航时拦截。命中时 cancel 请求并 `loadHTMLString` 加载本地拦截页面（盾牌图标 + 被拦截的域名 + "blocked by safe mode"），不发任何网络请求
-2. **BrowserTabManager `webView(for:)`** — WebView 创建时拦截。app 启动恢复 tab 时，如果 tab URL 命中 blocklist 就直接加载拦截页而不是真实 URL
-3. **BrowserTabManager `blockMatchingTabs()`** — 开启 safe mode 瞬间调用，遍历所有已打开的 tab，命中的立刻替换为拦截页
+1. **WKContentRuleListStore** — blocklist 编译为 content rule list 挂到 WebView 的 `userContentController`。WebKit 网络层直接 block 所有匹配域名的请求——不只是导航，img/script/XHR/fetch/WebSocket 子资源全部拦截。blocklist 变更时自动重新编译
+2. **WKNavigationDelegate `decidePolicyFor`** — 浏览器内导航时拦截。命中时 cancel 请求并 `loadHTMLString` 加载本地拦截页面（盾牌图标 + 被拦截的域名 + "blocked by safe mode"），不发任何网络请求
+3. **BrowserTabManager `webView(for:)`** — WebView 创建时拦截。app 启动恢复 tab 时，如果 tab URL 命中 blocklist 就直接加载拦截页而不是真实 URL
+4. **BrowserTabManager `blockMatchingTabs()`** — 开启 safe mode 瞬间调用，遍历所有已打开的 tab，命中的立刻替换为拦截页
+
+**非持久化存储：** safe mode 开启时 WebView 使用 `WKWebsiteDataStore.nonPersistent()`，cookie/cache/localStorage/IndexedDB/ServiceWorker 全部不落盘。safe mode 关闭时恢复 `.default()` 保留登录态。
+
+**IP 检测：** Protection Check 的 IP 检测使用自有 endpoint `satyricon.uk/ip`（nginx 返回 `$remote_addr`），不向第三方暴露 IP。
 
 **设置面板集成：**
 - 设置下拉中加一行 Safe Mode 开关（lock.shield 图标）
-- Safe mode 开启后下方出现 Blocklist 按钮，显示当前域名数量
+- Blocklist 按钮始终可见（不需要先开 safe mode 才能编辑）
 - 点击 Blocklist 弹出 sheet：顶部输入框可添加新域名，下方列表可左滑删除
 
 **关于 VPN 自动检测：**
