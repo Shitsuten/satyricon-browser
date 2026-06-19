@@ -318,6 +318,32 @@ class BrowserTabManager: ObservableObject {
 
 ---
 
+## 18. 安全模式（Safe Mode）
+
+为了防止没开 VPN 时浏览器发出 DNS 请求泄漏访问记录，内置了一个域名拦截机制。
+
+**BrowserSafeGuard（全局单例）：**
+- `@AppStorage("browser_safe_mode")` 控制开关
+- `@AppStorage("browser_blocklist")` 存储被拦截的域名列表（换行分隔）
+- 默认预填：`google.com`, `youtube.com`, `twitter.com`, `x.com`, `github.com`, `reddit.com`, `discord.com`, `telegram.org`
+- `shouldBlock(host:)` — nonisolated 方法，safe mode 开启时检查域名是否在 blocklist 中（含子域名匹配）
+
+**拦截点（三处覆盖所有场景）：**
+
+1. **WKNavigationDelegate `decidePolicyFor`** — 浏览器内导航时拦截。命中时 cancel 请求并 `loadHTMLString` 加载本地拦截页面（盾牌图标 + 被拦截的域名 + "blocked by safe mode"），不发任何网络请求
+2. **BrowserTabManager `webView(for:)`** — WebView 创建时拦截。app 启动恢复 tab 时，如果 tab URL 命中 blocklist 就直接加载拦截页而不是真实 URL
+3. **BrowserTabManager `blockMatchingTabs()`** — 开启 safe mode 瞬间调用，遍历所有已打开的 tab，命中的立刻替换为拦截页
+
+**设置面板集成：**
+- 设置下拉中加一行 Safe Mode 开关（lock.shield 图标）
+- Safe mode 开启后下方出现 Blocklist 按钮，显示当前域名数量
+- 点击 Blocklist 弹出 sheet：顶部输入框可添加新域名，下方列表可左滑删除
+
+**关于 VPN 自动检测：**
+不要尝试在 iOS 上自动检测 VPN 状态。`utun` 接口是 iOS 系统自带的（iCloud Private Relay 等），不代表有 VPN；代理类工具（Clash/Surge/Shadowrocket）的实现方式各异，`CFNetworkCopySystemProxySettings` 也不可靠。最终方案：safe mode 就是一个手动开关，用户自己知道有没有开 VPN。
+
+---
+
 ## 关键实现注意事项
 
 - 所有下拉浮层（脚本、设置）用 overlay + 透明背景点击关闭层，对齐 `.topTrailing`
